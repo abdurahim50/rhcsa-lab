@@ -1,0 +1,48 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        run: |
+          mapfile -t scripts < <(find . -name '*.sh' -type f -not -path './.git/*')
+          printf 'Linting %d script(s)\n' "${#scripts[@]}"
+          shellcheck --severity=warning "${scripts[@]}"
+
+  secrets:
+    name: no real secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The kickstart files intentionally carry throwaway lab passwords
+      # (root:redhat, student:student) for disposable VMs on an isolated
+      # network. This check is here to catch anything that is NOT that:
+      # private keys, tokens, and real credentials committed by accident.
+      - name: Scan for private keys and tokens
+        run: |
+          if grep -rIn --exclude-dir=.git --exclude=lint.yml \
+               -e 'BEGIN .*PRIVATE KEY' \
+               -e 'ghp_[A-Za-z0-9]\{36\}' \
+               -e 'AKIA[0-9A-Z]\{16\}' \
+               -e 'xox[baprs]-' . ; then
+            echo "::error::Possible real secret committed, see matches above"
+            exit 1
+          fi
+          echo "No private keys or tokens found"

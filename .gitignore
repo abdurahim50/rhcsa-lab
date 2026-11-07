@@ -1,0 +1,41 @@
+# Virtual machine artifacts, never commit these
+*.vmx
+*.vmdk
+*.vmsd
+*.vmem
+*.vmss
+*.nvram
+*.iso
+*.qcow2
+*.ova
+*.vbox*
+vmware.log
+*.log
+
+# Scratch work and local answers
+scratch/
+answers/
+*.local.md
+*.bak
+*.orig
+*.swp
+*~
+
+# Secrets, in case a real one ever lands here by accident
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.kdbx
+.env
+.env.*
+!.env.example
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
