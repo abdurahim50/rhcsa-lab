@@ -409,11 +409,32 @@ ls -l  /root/.ssh
 ssh root@node2 'ls -l ~/.ssh/authorized_keys'
 ```
 
-Break it deliberately, then fix it — this is how you'll recognise the failure:
+Break it deliberately, then fix it. What matters is **who can write to the file**, not
+whether the mode is exactly 600:
+
 ```bash
+# 644 is readable by others but NOT writable by them: key auth still works
 ssh root@node2 'chmod 644 ~/.ssh/authorized_keys'
+ssh -o BatchMode=yes root@node2 'hostname'     # still works
+
+# 666 is group- and world-WRITABLE: sshd now refuses to trust the file
+ssh root@node2 'chmod 666 ~/.ssh/authorized_keys'
 ssh -o BatchMode=yes root@node2 'hostname'     # FAILS, falls back to password
+
 ssh root@node2 'chmod 600 ~/.ssh/authorized_keys'   # type the password
+ssh -o BatchMode=yes root@node2 'hostname'     # works again
+```
+
+Run all three. The first one is the point of the exercise: a mode that merely looks
+untidy does not break anything, and if you go hunting for a permissions bug on a 644
+`authorized_keys` you will waste exam minutes on a file that was never the problem.
+
+The same rule applies one level up. `~/.ssh` at 755 is fine; at 775 or 777 it is not:
+
+```bash
+ssh root@node2 'chmod 777 ~/.ssh'
+ssh -o BatchMode=yes root@node2 'hostname'     # FAILS
+ssh root@node2 'chmod 700 ~/.ssh'              # type the password
 ssh -o BatchMode=yes root@node2 'hostname'     # works again
 ```
 

@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  shellcheck:
-    name: shellcheck
+  shell:
+    name: shell scripts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,11 +19,57 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: Lint shell scripts
+      - name: Syntax check
         run: |
           mapfile -t scripts < <(find . -name '*.sh' -type f -not -path './.git/*')
-          printf 'Linting %d script(s)\n' "${#scripts[@]}"
+          printf 'Checking %d script(s)\n' "${#scripts[@]}"
+          for s in "${scripts[@]}"; do bash -n "$s"; done
+
+      - name: Shellcheck
+        run: |
+          mapfile -t scripts < <(find . -name '*.sh' -type f -not -path './.git/*')
           shellcheck --severity=warning "${scripts[@]}"
+
+  graders:
+    name: grader logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # setfattr lets the test store real extended attributes, which is
+      # the case that caught the original always-failing SELinux check.
+      - name: Install attr
+        run: sudo apt-get update && sudo apt-get install -y attr
+
+      - name: Run grader helper tests
+        run: ./tests/test-checks.sh
+
+  kickstart:
+    name: kickstart syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pykickstart
+        run: pip install pykickstart
+
+      # Kickstart has no line continuation, so a wrapped command silently
+      # becomes garbage. ksvalidator catches that and much else.
+      - name: Validate kickstart files
+        run: |
+          for ks in lab/kickstart/*.cfg; do
+            echo "== $ks"
+            ksvalidator -v RHEL9 "$ks"
+          done
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check relative links
+        run: ./tests/check-links.sh
 
   secrets:
     name: no real secrets

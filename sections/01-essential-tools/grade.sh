@@ -1,17 +1,34 @@
 #!/bin/bash
 # =====================================================================
-# grade-01.sh  --  grades RHCSA Section 1 practice tasks.
+# grade.sh  --  grades RHCSA Section 1 practice tasks.
 # Run as root on node1, AFTER a reboot.
 #
-#   scp root@node1:/path/grade-01.sh /root/  ... or curl it from the host
-#   chmod +x grade-01.sh && ./grade-01.sh
+#   scp root@node1:/path/grade.sh /root/  ... or curl it from the host
+#   chmod +x grade.sh && ./grade.sh
 #
 # Read-only: it inspects, it never fixes anything for you.
+# Exits 0 only if you scored 70% or more, so CI and scripts can use it.
 # =====================================================================
 
 R=/opt/reports
+NODE2=node2.lab.example.com
 PASS=0; TOTAL=0
 declare -a MISSED
+
+# Shared, unit-tested verification helpers. Keep grade.sh next to lib/.
+LIB=${BASH_SOURCE[0]%/*}/lib/checks.sh
+if [[ -r $LIB ]]; then
+    # shellcheck source=lib/checks.sh
+    . "$LIB"
+else
+    echo "Cannot read $LIB - copy the whole section folder, not just this file." >&2
+    exit 2
+fi
+
+ssh2() {
+    ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
+        "root@$NODE2" "$@" 2>/dev/null
+}
 
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS+1)); }
 no()   { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; printf '        \033[33mwhy:\033[0m %s\n' "$2"; MISSED+=("$3"); }
@@ -43,14 +60,13 @@ task 2 "Preserved copies of passwd/group/shadow"
 MISS=""; BAD=""
 for f in passwd group shadow; do
     if [[ ! -f $R/etc-copies/$f ]]; then MISS+="$f "; continue; fi
-    SRC=$(stat -c '%U:%G:%a' /etc/$f); DST=$(stat -c '%U:%G:%a' $R/etc-copies/$f)
-    [[ $SRC == "$DST" ]] || BAD+="$f(want $SRC got $DST) "
+    same_metadata "/etc/$f" "$R/etc-copies/$f" || BAD+="$f($CHECK_WHY) "
 done
 if [[ -z $MISS && -z $BAD ]]; then
-    ok "all three copied with original ownership and mode"
+    ok "all three copied with original ownership, mode and timestamps"
 else
     no "etc-copies" "missing: ${MISS:-none}; wrong metadata: ${BAD:-none}" \
-       "2: cp -p /etc/{passwd,group,shadow} /opt/reports/etc-copies/"
+       "2: cp -p /etc/{passwd,group,shadow} /opt/reports/etc-copies/   (plain cp loses the timestamps)"
 fi
 
 # ---------------------------------------------------------------- 3
@@ -110,10 +126,10 @@ elif ! file -b /root/sshconf.tar.bz2 | grep -qi bzip2; then
     no "sshconf.tar.bz2" "not bzip2: $(file -b /root/sshconf.tar.bz2)" "7: use tar -cjf (j = bzip2)"
 elif ! tar -tjf /root/sshconf.tar.bz2 2>/dev/null | grep -q 'etc/ssh/'; then
     no "sshconf.tar.bz2" "bzip2 but etc/ssh/ not found inside" "7: tar -cjf ... /etc/ssh"
-elif tar -tjvf /root/sshconf.tar.bz2 2>/dev/null | grep -q 'SCHILY.xattr\|selinux'; then
-    ok "bzip2, /etc/ssh, xattrs present"
+elif archive_has_selinux_xattr /root/sshconf.tar.bz2; then
+    ok "bzip2, /etc/ssh, SELinux contexts stored ($CHECK_WHY)"
 else
-    no "sshconf.tar.bz2" "archive is correct but carries no SELinux/xattr metadata" \
+    no "sshconf.tar.bz2" "archive is correct but carries no SELinux context metadata ($CHECK_WHY)" \
        "7: add --selinux --xattrs to the tar command"
 fi
 
@@ -180,8 +196,7 @@ fi
 
 # --------------------------------------------------------------- 13
 task 13 "Passwordless SSH to node2"
-if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
-       root@node2.lab.example.com true 2>/dev/null; then
+if ssh2 true; then
     ok "key-based login to root@node2 works non-interactively"
 else
     no "ssh key auth" "BatchMode login to root@node2 failed (key missing, wrong perms, or node2 down)" \
@@ -190,20 +205,30 @@ fi
 
 # --------------------------------------------------------------- 14
 task 14 "Archive copied to node2:/tmp"
-if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 \
-       root@node2.lab.example.com 'test -s /tmp/sysconfig.tar.gz' 2>/dev/null; then
-    ok "/tmp/sysconfig.tar.gz present on node2"
-else
+LOCAL_SHA=$(file_sha /root/sysconfig.tar.gz)
+REMOTE_SHA=$(ssh2 'sha256sum /tmp/sysconfig.tar.gz 2>/dev/null | cut -d" " -f1')
+if [[ -z $REMOTE_SHA ]]; then
     no "scp" "/tmp/sysconfig.tar.gz not found on node2 (or SSH unavailable)" \
        "14: scp /root/sysconfig.tar.gz root@node2:/tmp/"
+elif [[ -z $LOCAL_SHA ]]; then
+    no "scp" "a file exists on node2 but /root/sysconfig.tar.gz is missing locally, so it cannot be the same file" \
+       "14: finish task 6 first, then scp the archive"
+elif [[ $LOCAL_SHA == "$REMOTE_SHA" ]]; then
+    ok "/tmp/sysconfig.tar.gz on node2 is byte-identical to the local archive"
+else
+    no "scp" "node2 has a /tmp/sysconfig.tar.gz but its checksum differs from the local archive (stale copy from an earlier attempt?)" \
+       "14: re-copy it: scp /root/sysconfig.tar.gz root@node2:/tmp/"
 fi
 
 # --------------------------------------------------------------- 15
 task 15 "Extracted archive"
-if [[ -d $R/archive/etc/sysconfig ]]; then
-    ok "extracted to $R/archive/etc/sysconfig"
+if [[ ! -d $R/archive ]]; then
+    no "archive extraction" "$R/archive does not exist" \
+       "15: mkdir -p $R/archive; tar -xzf /root/sysconfig.tar.gz -C $R/archive"
+elif archive_matches_tree /root/sysconfig.tar.gz "$R/archive"; then
+    ok "every member of the archive is present under $R/archive"
 else
-    no "archive extraction" "$R/archive/etc/sysconfig not found" \
+    no "archive extraction" "$CHECK_WHY" \
        "15: mkdir -p $R/archive; tar -xzf /root/sysconfig.tar.gz -C $R/archive"
 fi
 
@@ -228,4 +253,5 @@ if (( ${#MISSED[@]} )); then
     echo "Do not just apply the fixes above and re-grade -- that trains nothing."
 fi
 
-exit 0
+# Exit status mirrors the result: 0 passing, 1 below 70%.
+(( PCT >= 70 ))

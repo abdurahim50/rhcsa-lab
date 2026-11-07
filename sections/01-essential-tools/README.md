@@ -12,6 +12,7 @@ The foundation section. Everything in sections 02 to 10 assumes you can navigate
 | [`LABS.md`](LABS.md) | Guided practice. Labs 1.1 to 1.10, with the output you should see |
 | [`EXAM.md`](EXAM.md) | 15 timed tasks under exam conditions. 11 of 15 is a pass |
 | [`grade.sh`](grade.sh) | Grades the 15 tasks and explains every pass and fail. Read-only |
+| [`lib/checks.sh`](lib/checks.sh) | The fiddly verification logic, kept separate so `tests/` can prove it works |
 
 ## What the notes cover
 

@@ -11,9 +11,25 @@
 |---|---|---|
 | Free RAM | 6 GB | 16 GB |
 | CPU cores | 4 | 8 |
-| Free disk | 120 GB | 200 GB |
+| Free disk | 60 GB | 120 GB |
 | Virtualization | VT-x / AMD-V enabled in BIOS | — |
 | VMware | Workstation Pro 17.5+ / Fusion Pro 13.5+ | latest |
+
+**Where the disk goes.** The two VMs *declare* 70 GB of virtual disk (node1: 20 + 10 + 5
++ 5, node2: 20 + 10), but VMware grows those files as they fill, and most of them stay
+nearly empty:
+
+| Item | Actual space used |
+|---|---|
+| RHEL 10 DVD ISO | ~12 GB |
+| node1 after a minimal install | ~5 GB |
+| node2 after install and services | ~6 GB |
+| `sdb`/`sdc`/`sdd` while still raw | under 1 GB total |
+| Each snapshot | 1 to 5 GB, growing as you work |
+
+That is roughly 25 GB to get running. The 60 GB minimum leaves room for a few snapshots
+and the storage labs filling those raw disks; 120 GB means never thinking about it. If
+you keep the ISO on an external drive, subtract 12 GB.
 
 **One hard gate for RHEL 10:** it requires an `x86-64-v3` CPU. In practice that means
 an Intel Haswell (2013) or AMD Excavator/Zen (2015) or newer host. If your host CPU is
@@ -210,19 +226,63 @@ python3 -m http.server 8000 --bind 172.25.250.1
 2. At the GRUB boot menu, highlight **Install Red Hat Enterprise Linux 10** and press
    **`e`**.
 3. Find the line beginning `linuxefi /images/pxeboot/vmlinuz …` and append, at the very
-   end of that line:
+   end of that line, **both** arguments, on one line separated by a space:
 
+   **node1:**
    ```
-   inst.ks=http://172.25.250.1:8000/ks-node1.cfg
+   ip=172.25.250.10::172.25.250.1:255.255.255.0:node1.lab.example.com:ens192:none inst.ks=http://172.25.250.1:8000/ks-node1.cfg
+   ```
+
+   **node2:**
+   ```
+   ip=172.25.250.11::172.25.250.1:255.255.255.0:node2.lab.example.com:ens192:none inst.ks=http://172.25.250.1:8000/ks-node2.cfg
    ```
 
 4. Press **Ctrl-X** to boot.
 
-The install runs unattended and reboots itself. Repeat for node2 with `ks-node2.cfg`.
+The install runs unattended and reboots itself.
+
+### Why `ip=` is not optional here
+
+**Without it, the install fails.** You switched DHCP off on this VMnet in step 2, so the
+installer boots with no address at all. It cannot reach `172.25.250.1:8000`, so it never
+downloads the kickstart, and Anaconda drops you into the interactive installer as though
+you had typed nothing. An installer that ignores `inst.ks` is almost always an installer
+with no network.
+
+`ip=` is what gives the installer an address *before* it fetches anything. The kickstart's
+own `network --bootproto=static` line configures the installed system, which is a later
+and separate step.
+
+The fields are positional, colon-separated, and empty ones are skipped:
+
+```
+ip=<address>:<server>:<gateway>:<netmask>:<hostname>:<interface>:<autoconf>
+   172.25.250.10 : (empty) : 172.25.250.1 : 255.255.255.0 : node1.lab.example.com : ens192 : none
+```
+
+- The **server** field is for boot servers such as NFS or TFTP. Empty here.
+- The **gateway** is the host-only adapter. There is no route off this network, and that
+  is the point, but the field wants a value and the adapter is the right one.
+- `none` means "no autoconfiguration": use exactly the address given, do not try DHCP.
+
+**Check the interface name before you type it.** These VMs come up as `ens192`, but the
+name depends on the virtual NIC the wizard gave you. If the install stalls at the
+kickstart download, switch to the installer's shell with **Ctrl-Alt-F2** and run:
+
+```bash
+ip link            # lists the interface names the installer can see
+ip -4 addr         # did your ip= argument actually take effect?
+```
+
+Then reboot and retype the argument with the correct name. If you would rather not deal
+with names at all, `ksdevice=link` plus `ip=dhcp` is the usual alternative, but it needs
+a DHCP server, which this network deliberately does not have.
 
 > **Reading the kickstart is part of the learning.** Open `ks-node1.cfg` and read the
-> comments — the partition layout, the `ignoredisk` line, and the `%post` repo block
-> are all things the exam expects you to be able to build by hand.
+> comments. The partition layout, the `ignoredisk` line, and the `%post` repo block are
+> all things the exam expects you to build by hand.
+
 
 ---
 
@@ -255,6 +315,11 @@ Boot the ISO with no extra arguments and work through these screens.
 
 **Software Selection** — **Minimal Install**, no add-ons. The exam machine is bare;
 yours should be too.
+
+> **node2 needs packages that Minimal Install does not provide.** Choose Minimal Install
+> on node2 as well, but you must then install the service packages by hand before
+> `node2-services.sh` will work. Section 7 has the command. The kickstart path installs
+> them for you; this manual path does not.
 
 **Network & Host Name**
 - Host name: `node1.lab.example.com` → **Apply**
@@ -334,10 +399,20 @@ the storage section of the exam.
 
 ## 7. Turn node2 into the services host
 
-Copy `node2-services.sh` onto node2 (`curl -O http://172.25.250.1:8000/node2-services.sh`
+**If you installed node2 by hand (Path B), install the service packages first.** A
+Minimal Install has no `httpd` and no `nfs-server`, so `node2-services.sh` would try to
+start services that do not exist. Set up node2's own DVD repo as in section 6, then:
+
+```bash
+dnf install -y httpd nfs-utils chrony policycoreutils-python-utils rsync
+```
+
+Skip this if you used the kickstart: `ks-node2.cfg` already lists all five.
+
+Now copy `node2-services.sh` onto node2 (`curl -O http://172.25.250.1:8000/node2-services.sh`
 while the host web server is still running, or just retype it) and run it as root.
 
-It configures the HTTP repo, the NFS exports, chrony, and firewalld — all persistently.
+It configures the HTTP repo, the NFS exports, chrony, and firewalld, all persistently.
 Read the script before running it; every block in it is an RHCSA-level task.
 
 Then verify **from node2**:

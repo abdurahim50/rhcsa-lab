@@ -60,14 +60,25 @@ This repository is the environment plus the course that runs on it:
 │       ├── lab-bringup.sh        Bring a hand-installed node to kickstart state
 │       ├── node2-services.sh     Configure the repo, NFS exports, and chrony
 │       └── lab-check.sh          Health and persistence check, run after reboot
-└── sections/
-    ├── 01-essential-tools/       NOTES.md, LABS.md, EXAM.md, grade.sh
-    ├── 02-manage-software/
-    ├── ...
-    └── 11-mock-exam/             Full three-hour mixed exam
+├── sections/
+│   ├── 01-essential-tools/       NOTES.md, LABS.md, EXAM.md, grade.sh
+│   │   └── lib/checks.sh         Verification helpers the grader shares with the tests
+│   ├── 02-manage-software/
+│   ├── ...
+│   └── 11-mock-exam/             Full three-hour mixed exam
+└── tests/
+    ├── test-checks.sh            Offline tests for the grader's logic
+    └── check-links.sh            Every relative Markdown link resolves
 ```
 
-Each section folder holds the same four files:
+`tests/` runs anywhere bash and tar exist, with no RHEL, no root, and no VMs. It is there
+because a broken grader is invisible: a check that can never pass looks exactly like a
+learner who got the task wrong. CI runs it, plus shellcheck, `ksvalidator` on the
+kickstart files, and a scan for committed keys.
+
+**Only section 01 is written.** It holds the four files below. Sections 02 to 11 are
+scaffolds right now: each is a README listing that section's real objectives and the VMs
+its labs will need, and each will grow the same four files as it is built.
 
 | File | What it is |
 |---|---|
@@ -94,7 +105,7 @@ Each section folder holds the same four files:
 
 ## Quick start
 
-You need VMware Workstation or Fusion, roughly 40 GB of disk, 8 GB of RAM, and a RHEL 10 ISO. A [Red Hat Developer Subscription](https://developers.redhat.com/products/rhel/download) provides the ISO at no cost for personal use.
+You need VMware Workstation or Fusion, 60 GB of free disk (120 GB is comfortable once you keep snapshots), 8 GB of RAM, and a RHEL 10 ISO. A [Red Hat Developer Subscription](https://developers.redhat.com/products/rhel/download) provides the ISO at no cost for personal use. The [build guide](docs/lab-build-guide.md#host-requirements) breaks down where the disk space actually goes.
 
 1. Follow [`docs/lab-build-guide.md`](docs/lab-build-guide.md) to create the host-only network and both VMs.
 2. Install with the kickstart files for an unattended build, or install by hand and then run `lab-bringup.sh`:

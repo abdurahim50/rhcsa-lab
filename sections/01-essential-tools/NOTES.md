@@ -3052,13 +3052,27 @@ Read it using Parts 1 and 2: `cat` sends your public key into the pipe; on `node
 
 If anyone other than the account's owner could write to `~/.ssh/authorized_keys`, they could add **their own** key and log in as that user. So `sshd` checks permissions (its `StrictModes` setting) and **silently ignores the keys** if the files are too open. You just get a password prompt, with no explanation on the client side.
 
-| Path | Required |
-|---|---|
-| the home directory | not writable by group or others |
-| `~/.ssh` | `700` (`drwx------`) |
-| `~/.ssh/authorized_keys` | `600` (`-rw-------`) |
-| `~/.ssh/id_ed25519` (the private key, on the client) | `600`; ssh refuses to use a private key that others can read |
-| `~/.ssh/id_ed25519.pub` | `644` is fine |
+**Be precise about what the rule actually is.** `StrictModes` rejects a path that is
+**writable by group or others**. It does not demand one exact mode. This distinction
+costs people real time, because they see a mode that looks untidy, "fix" it, and the
+login still fails for the actual reason somewhere else.
+
+| Path | What breaks it | Recommended |
+|---|---|---|
+| the home directory | group or other **write** (`775`, `777`, `g+w`) | `700` or `750` |
+| `~/.ssh` | group or other **write** | `700` (`drwx------`) |
+| `~/.ssh/authorized_keys` | group or other **write** (`666`, `664`, `622`) | `600` (`-rw-------`) |
+| `~/.ssh/id_ed25519` (the private key, on the client) | any access by group or others, **read included** | `600` |
+| `~/.ssh/id_ed25519.pub` | nothing, it is public | `644` |
+
+So `authorized_keys` at `644` still authenticates: others can read your public key, which
+is harmless, and nobody but you can write a new one in. At `664` or `666` it stops
+working, because now someone else can append their own key and become you. The private
+key is the one case where even *reading* is disqualifying, and `ssh` refuses it on the
+client side with a loud warning rather than silently.
+
+Set `600` and `700` anyway. They are what `ssh-copy-id` produces, they are what a grader
+expects to see, and they are never wrong. Just know which failures they actually explain.
 
 SELinux labels matter too: files under `~/.ssh` should carry the `ssh_home_t` type. If you created them in an unusual way (for example by moving them in from elsewhere), fix the labels with `restorecon -Rv ~/.ssh` (explained in the security section).
 
@@ -3606,7 +3620,7 @@ Use these tables for lookup **after** you understand the parts they summarize.
 | `ssh-keygen -R host` | forget a changed host key |
 | `scp SRC user@host:PATH`, `scp -r`, `scp -P port` | copy; recursive; port |
 | `rsync -av src/ user@host:dest/` | sync the contents of src |
-| `~/.ssh` 700, `authorized_keys` 600 | required permissions |
+| `~/.ssh` 700, `authorized_keys` 600 | recommended; what actually breaks auth is group or other **write** |
 
 ### Documentation (Part 11)
 
@@ -3728,4 +3742,4 @@ Use these tables for lookup **after** you understand the parts they summarize.
 
 ---
 
-*Next step: work through `01-essential-tools-LABS.md`. When you can finish the labs without looking back at these notes, take the timed `01-essential-tools-EXAM.md` and run `grade-01.sh`.*
+*Next step: work through `LABS.md`. When you can finish the labs without looking back at these notes, revert node1 to a clean snapshot, take the timed `EXAM.md`, reboot, and run `./grade.sh`.*

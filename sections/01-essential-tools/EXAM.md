@@ -9,7 +9,7 @@
 - Work on **node1** as `root`, at the VMware console or over SSH.
 - Reboot when you finish and *before* grading. Anything that doesn't survive a reboot
   scores zero, exactly as on the real exam.
-- Grade with `./grade-01.sh`. Do not read the grading script first — it gives answers away.
+- Grade with `./grade.sh`. Do not read the grading script first; it gives answers away.
 
 If you finish early, verify everything again. Nobody ever lost points for checking twice.
 
@@ -93,7 +93,7 @@ reboot
 Then log back in and run:
 
 ```bash
-cd /root && ./grade-01.sh
+cd /root && ./grade.sh
 ```
 
 ## Scoring

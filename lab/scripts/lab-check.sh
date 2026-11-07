@@ -58,9 +58,27 @@ grep -q '/mnt/dvd' /etc/fstab \
 dnf -q repolist 2>/dev/null | grep -qi baseos \
   && pass "dnf sees a BaseOS repo" \
   || fail "dnf cannot see BaseOS"
-dnf -q -y install --downloadonly tree &>/dev/null \
-  && pass "dnf can resolve and download packages" \
-  || fail "dnf transaction test failed"
+dnf -q makecache &>/dev/null \
+  && pass "dnf can read repository metadata" \
+  || fail "dnf cannot refresh repository metadata"
+
+# Prove a real download, not just a satisfied dependency. "dnf install
+# --downloadonly <pkg>" exits 0 when the package is ALREADY installed
+# without fetching a byte, so tree (which the kickstart installs) would
+# report success on a completely broken repo. Download into a temp dir
+# and check an .rpm actually lands there.
+DLDIR=$(mktemp -d)
+if dnf -q -y download --destdir="$DLDIR" tree &>/dev/null ||
+   dnf -q -y reinstall --downloadonly --destdir="$DLDIR" tree &>/dev/null; then
+  if compgen -G "$DLDIR/*.rpm" >/dev/null; then
+    pass "dnf downloaded a package from the repo ($(basename "$DLDIR"/*.rpm))"
+  else
+    fail "dnf reported success but no .rpm was written to $DLDIR"
+  fi
+else
+  fail "dnf could not download a package from the repo"
+fi
+rm -rf "$DLDIR"
 
 sect "Security baseline"
 [[ $(getenforce) == Enforcing ]] \
@@ -80,6 +98,12 @@ sect "node2 services (reachable from node1)"
 curl -sfI http://node2.lab.example.com/rhel10/BaseOS/ &>/dev/null \
   && pass "node2 HTTP repo answers" \
   || fail "http://node2.lab.example.com/rhel10/BaseOS/ unreachable"
+# A directory listing proves httpd is up; repomd.xml proves the repository
+# itself is intact. A repo missing its metadata serves 200s all day and
+# still cannot install anything.
+curl -sf http://node2.lab.example.com/rhel10/BaseOS/repodata/repomd.xml 2>/dev/null | grep -q '<repomd' \
+  && pass "node2 repository metadata (repomd.xml) is readable" \
+  || fail "repodata/repomd.xml missing or unreadable on node2"
 if command -v showmount &>/dev/null; then
   showmount -e node2.lab.example.com 2>/dev/null | grep -q /exports \
     && pass "node2 NFS exports visible" \
