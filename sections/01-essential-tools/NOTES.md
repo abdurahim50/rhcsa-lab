@@ -3742,4 +3742,4 @@ Use these tables for lookup **after** you understand the parts they summarize.
 
 ---
 
-*Next step: work through `LABS.md`. When you can finish the labs without looking back at these notes, revert node1 to a clean snapshot, take the timed `EXAM.md`, reboot, and run `./grade.sh`.*
+*Next step: work through `LABS.md`. When you can finish the labs without looking back at these notes, revert node1 to a clean snapshot, take the timed `EXAM.md`, reboot, and run `./grade.sh` from the copied section folder.*

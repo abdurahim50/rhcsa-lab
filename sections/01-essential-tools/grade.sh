@@ -3,8 +3,17 @@
 # grade.sh  --  grades RHCSA Section 1 practice tasks.
 # Run as root on node1, AFTER a reboot.
 #
-#   scp root@node1:/path/grade.sh /root/  ... or curl it from the host
-#   chmod +x grade.sh && ./grade.sh
+# COPY THE WHOLE FOLDER, not just this file: grade.sh needs lib/checks.sh
+# sitting next to it.
+#
+#   scp -r 01-essential-tools root@node1:/root/
+#   ssh root@node1
+#   cd /root/01-essential-tools && chmod +x grade.sh && ./grade.sh
+#
+# The layout it expects:
+#   01-essential-tools/
+#   ├── grade.sh
+#   └── lib/checks.sh
 #
 # Read-only: it inspects, it never fixes anything for you.
 # Exits 0 only if you scored 70% or more, so CI and scripts can use it.

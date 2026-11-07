@@ -45,8 +45,11 @@ Read a part, type its `Try it` blocks, answer the self-check, then do the matchi
 ## Grading
 
 ```bash
-# on node1, as root, AFTER a reboot
-./grade.sh
+# copy the whole section folder: grade.sh needs lib/checks.sh beside it
+scp -r 01-essential-tools root@node1:/root/
+
+# then on node1, as root, AFTER a reboot
+cd /root/01-essential-tools && ./grade.sh
 ```
 
 The grader is read-only: it inspects, it never fixes. Rebooting first matters, because Red Hat grades after a reboot and a task that does not persist scores zero.

@@ -47,15 +47,26 @@ assert_fail "mode change is rejected"               same_metadata "$TMP/meta/src
 
 echo "== archive_matches_tree"
 mkdir -p "$TMP/tree/etc/sysconfig"
-printf 'a\n' > "$TMP/tree/etc/sysconfig/one"
-printf 'b\n' > "$TMP/tree/etc/sysconfig/two"
+printf 'alpha\n' > "$TMP/tree/etc/sysconfig/one"
+printf 'beta\n'  > "$TMP/tree/etc/sysconfig/two"
 ( cd "$TMP/tree" && tar -czf "$TMP/t.tar.gz" etc/sysconfig )
-mkdir -p "$TMP/full" && tar -xzf "$TMP/t.tar.gz" -C "$TMP/full"
+
+mkdir -p "$TMP/full"    && tar -xzf "$TMP/t.tar.gz" -C "$TMP/full"
 mkdir -p "$TMP/empty"
-mkdir -p "$TMP/partial/etc/sysconfig" && printf 'a\n' > "$TMP/partial/etc/sysconfig/one"
+mkdir -p "$TMP/partial" && tar -xzf "$TMP/t.tar.gz" -C "$TMP/partial" && rm "$TMP/partial/etc/sysconfig/two"
+# Right names, wrong bytes. This is what an existence-only check waves through.
+mkdir -p "$TMP/hollow/etc/sysconfig" && : > "$TMP/hollow/etc/sysconfig/one" && : > "$TMP/hollow/etc/sysconfig/two"
+# Same byte count, different content: size alone cannot catch this.
+mkdir -p "$TMP/samesize" && tar -xzf "$TMP/t.tar.gz" -C "$TMP/samesize" && printf 'bets\n' > "$TMP/samesize/etc/sysconfig/two"
+# Correct contents, different mtime: must still pass, nobody asked for -p.
+mkdir -p "$TMP/touched" && tar -xzf "$TMP/t.tar.gz" -C "$TMP/touched" && touch "$TMP/touched/etc/sysconfig/one"
+
 assert_ok   "fully extracted tree is accepted"      archive_matches_tree "$TMP/t.tar.gz" "$TMP/full"
+assert_ok   "differing mtime alone still passes"    archive_matches_tree "$TMP/t.tar.gz" "$TMP/touched"
 assert_fail "empty directory is rejected"           archive_matches_tree "$TMP/t.tar.gz" "$TMP/empty"
 assert_fail "partial extraction is rejected"        archive_matches_tree "$TMP/t.tar.gz" "$TMP/partial"
+assert_fail "empty files with right names rejected" archive_matches_tree "$TMP/t.tar.gz" "$TMP/hollow"
+assert_fail "same-size corrupted file is rejected"  archive_matches_tree "$TMP/t.tar.gz" "$TMP/samesize"
 assert_fail "missing archive is rejected"           archive_matches_tree "$TMP/nope.tar.gz" "$TMP/full"
 
 echo "== archive_has_xattr_key"
@@ -64,14 +75,37 @@ echo "== archive_has_xattr_key"
 assert_fail "archive without xattrs is rejected"    archive_has_xattr_key "$TMP/plain.tar.bz2" 'security\.selinux'
 assert_fail "missing archive is rejected"           archive_has_xattr_key "$TMP/gone.tar.bz2" 'security\.selinux'
 
-# The fallback path reads pax headers straight out of the stream. Prove it
-# recognises the two keyword spellings RHEL tar has used.
+# Build archives carrying GENUINE pax metadata, without needing setfattr,
+# and prove both keyword spellings RHEL tar has used are recognised.
 for key in SCHILY.xattr.security.selinux RHT.security.selinux; do
-    mkdir -p "$TMP/pax"; printf '%s=system_u:object_r:etc_t:s0\n' "$key" > "$TMP/pax/header"
-    ( cd "$TMP/pax" && tar -cjf "$TMP/pax-$key.tar.bz2" header )
-    assert_ok "pax keyword $key is recognised" \
+    RHCSA_OUT="$TMP/pax-$key.tar.bz2" RHCSA_KEY=$key python3 -I -c '
+import io, os, tarfile
+info = tarfile.TarInfo("etc/ssh/sshd_config"); data = b"PermitRootLogin yes\n"
+info.size = len(data)
+info.pax_headers = {os.environ["RHCSA_KEY"]: "system_u:object_r:etc_t:s0"}
+with tarfile.open(os.environ["RHCSA_OUT"], "w:bz2", format=tarfile.PAX_FORMAT) as tf:
+    tf.addfile(info, io.BytesIO(data))
+'
+    assert_ok "real pax keyword $key is recognised" \
         archive_has_xattr_key "$TMP/pax-$key.tar.bz2" 'security\.selinux'
 done
+
+# THE false-positive guard. An ordinary text file whose CONTENT mentions
+# the keyword carries no SELinux metadata whatsoever. A check that reads
+# the raw stream passes this and awards the mark for a text file.
+mkdir -p "$TMP/decoy"
+printf 'SCHILY.xattr.security.selinux=system_u:object_r:etc_t:s0\n' > "$TMP/decoy/notes.txt"
+printf 'see also RHT.security.selinux in older tar\n' >> "$TMP/decoy/notes.txt"
+( cd "$TMP/decoy" && tar -cjf "$TMP/decoy.tar.bz2" notes.txt )
+assert_fail "keyword in file CONTENT does not count" \
+    archive_has_xattr_key "$TMP/decoy.tar.bz2" 'security\.selinux'
+
+# Same trap one level up: a FILENAME containing the keyword is not metadata.
+mkdir -p "$TMP/decoy2"
+: > "$TMP/decoy2/security.selinux"
+( cd "$TMP/decoy2" && tar -cjf "$TMP/decoy2.tar.bz2" security.selinux )
+assert_fail "keyword in a FILENAME does not count" \
+    archive_has_xattr_key "$TMP/decoy2.tar.bz2" 'security\.selinux'
 
 # Real xattrs, when the host can make them. GitHub runners can after
 # installing attr; most sandboxes cannot, so this skips rather than fails.

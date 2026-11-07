@@ -9,7 +9,7 @@ Every section has four files, and they are meant to be used in this order:
 1. **`NOTES.md`** teaches the concept. Read it with a terminal open and type the `Try it` blocks as you go. They are written to be safe to run on node1 as root.
 2. **`LABS.md`** walks you through the commands with the output you should expect. Guided, with the answer on the page.
 3. **`EXAM.md`** gives you the same skills as timed tasks with no hints. This is the one that tells you whether you actually know it.
-4. **`grade.sh`** checks your work and explains each pass and fail. Read-only; it never changes your system.
+4. **`grade.sh`** checks your work and explains each pass and fail. Read-only; it never changes your system. Copy the whole section folder onto the node, not just the script: it reads `lib/checks.sh` from beside itself.
 
 ## Read a part, then do its lab
 
